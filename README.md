@@ -39,9 +39,39 @@ publishes it, measures engagement — and <strong>rewrites its own strategy base
 
 <br/>
 
-[Demo](#-demo) · [Quick Start](#-quick-start) · [How It Works](#-how-it-works) · [Configuration](#-configuring-your-niche) · [Roadmap](#-roadmap) · [Contributing](CONTRIBUTING.md)
+[Real Results](#-real-results) · [Demo](#-demo) · [Quick Start](#-quick-start) · [How It Works](#-how-it-works) · [Configuration](#-configuring-your-niche) · [Roadmap](#-roadmap) · [Contributing](CONTRIBUTING.md)
 
 </div>
+
+<br/>
+
+---
+
+<!-- ============================================ -->
+<!--         REAL RESULTS                         -->
+<!-- ============================================ -->
+
+## 🔥 Real Results
+
+We've been running AutoViralAI for **~1.5 months** on a tech/programming Threads account. Here are some posts that went viral — **every single one was researched, generated, and ranked by the agent:**
+
+<div align="center">
+
+<img src="docs/screenshots/viral_post_3.png" alt="Viral post: jQuery vs React — 800 likes, 80 comments, 20 reposts" width="70%">
+
+<br/><br/>
+
+<img src="docs/screenshots/viral_post_2.png" alt="Viral post: Turbo Pascal vs modern Go — 481 likes, 90 comments, 13 reposts" width="70%">
+
+<br/><br/>
+
+<img src="docs/screenshots/viral_post_1.png" alt="Viral post: console.log in production — 363 likes, 79 comments" width="70%">
+
+</div>
+
+<br/>
+
+> **800+ likes on a single post.** The agent learned that contrarian "old tech vs new tech" hooks and relatable developer war stories consistently outperform generic tips — and it adapted its strategy automatically.
 
 <br/>
 
@@ -92,6 +122,7 @@ Day 1:   "Here's a generic coding tip"            → 12 likes
 Day 7:   "Hot take: most devs don't need Docker"   → 340 likes
 Day 14:  Agent learned contrarian hooks work 3x     → adapts strategy automatically
 Day 30:  Posts consistently hit 500+ engagement     → you didn't write a single one
+Day 45:  Single post hits 800 likes                 → the agent wrote it, not you
 ```
 
 <br/>
