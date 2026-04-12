@@ -3,14 +3,10 @@ import logging
 from datetime import UTC, datetime
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from langgraph.types import Command
 from telegram.error import TelegramError
 
 from bot.telegram_bot import (
-    build_enrichment_data,
-    send_approval_request,
     send_creation_failure,
-    send_pipeline_report,
 )
 from config.settings import Settings, get_settings
 from src.exceptions import PipelineError
@@ -45,7 +41,6 @@ class PipelineOrchestrator:
         self._creation_cycle = 0
         self._learning_cycle = 0
         self._cycle_lock = asyncio.Lock()
-        self._pending_interrupts: dict[str, dict] = {}
         self._paused = False
         self.kb = KnowledgeBase(store=self.store, account_id=self.settings.account_id)
 
@@ -120,19 +115,6 @@ class PipelineOrchestrator:
                 logger.info("Creation pipeline event: %s", list(event.keys()))
 
             state = await compiled.aget_state(config)
-            if state.next and "human_approval" in state.next:
-                logger.info(
-                    "Creation cycle #%d paused at human_approval (thread=%s)",
-                    cycle,
-                    thread_id,
-                )
-                self._pending_interrupts[thread_id] = {
-                    "compiled": compiled,
-                    "config": config,
-                }
-                await self._send_approval_telegram(thread_id, state)
-                return result
-
             values = (state.values if state else None) or (result or {})
             if values.get("goal_reached"):
                 logger.info(
@@ -150,42 +132,6 @@ class PipelineOrchestrator:
             return result
         except Exception as e:
             raise PipelineError(f"Creation pipeline cycle #{cycle} failed: {e}") from e
-
-    async def _send_approval_telegram(self, thread_id: str, state) -> None:
-        if not self.bot_app or not self.telegram_chat_id:
-            logger.warning("Cannot send approval request: bot_app or chat_id not configured")
-            return
-
-        values = state.values
-        selected_post = values.get("selected_post", {})
-        ranked_posts = values.get("ranked_posts", [])
-        alternatives = ranked_posts[1:3] if len(ranked_posts) > 1 else []
-
-        try:
-            await send_pipeline_report(self.bot_app, self.telegram_chat_id, values)
-        except TelegramError as e:
-            logger.error("Failed to send pipeline report: %s", e)
-
-        enrichment = None
-        try:
-            enrichment = await build_enrichment_data(self.kb, selected_post or {})
-        except Exception as e:  # enrichment is best-effort, KB or other errors
-            logger.error("Failed to build enrichment data: %s", e)
-
-        try:
-            await send_approval_request(
-                app=self.bot_app,
-                chat_id=self.telegram_chat_id,
-                thread_id=thread_id,
-                selected_post=selected_post or {},
-                alternatives=alternatives,
-                cycle_number=values.get("cycle_number", 0),
-                follower_count=values.get("current_follower_count", 0),
-                enrichment=enrichment,
-            )
-            logger.info("Approval request sent to Telegram for thread=%s", thread_id)
-        except TelegramError as e:
-            logger.error("Failed to send Telegram approval: %s", e)
 
     async def _send_creation_failure_telegram(self, cycle: int, errors: list) -> None:
         if not self.bot_app or not self.telegram_chat_id:
@@ -214,109 +160,6 @@ class PipelineOrchestrator:
             logger.info("Creation failure notification sent for cycle #%d", cycle)
         except TelegramError as e:
             logger.error("Failed to send creation failure notification: %s", e)
-
-    async def resume_creation(self, thread_id: str, decision: dict) -> dict | None:
-        pending = self._pending_interrupts.pop(thread_id, None)
-        if not pending:
-            logger.info(
-                "No in-memory interrupt for %s, reconstructing from checkpointer", thread_id
-            )
-            graph = build_creation_pipeline(
-                self.settings,
-                self.store,
-                threads_client=self._threads_client,
-                hn=self._hn_client,
-                scraper=self._scraper,
-                embedding_client=self._embedding_client,
-            )
-            compiled = graph.compile(checkpointer=self.checkpointer)
-            config = {"configurable": {"thread_id": thread_id}}
-
-            try:
-                state = await compiled.aget_state(config)
-            except Exception as e:  # LangGraph has no typed exception hierarchy
-                logger.error("Failed to get state for thread_id=%s: %s", thread_id, e)
-                return None
-
-            if not (state and state.next and "human_approval" in state.next):
-                logger.warning(
-                    "Thread %s not paused at human_approval (next=%s)",
-                    thread_id,
-                    state.next if state else None,
-                )
-                return None
-
-            pending = {"compiled": compiled, "config": config}
-
-        compiled = pending["compiled"]
-        config = pending["config"]
-
-        publish_at = decision.get("publish_at")
-        if publish_at:
-            self._pending_interrupts[thread_id] = pending
-            self._schedule_delayed_publish(thread_id, decision, publish_at)
-            return None
-
-        logger.info("Resuming creation pipeline thread=%s with decision=%s", thread_id, decision)
-
-        try:
-            result = None
-            async for event in compiled.astream(Command(resume=decision), config):
-                result = event
-                logger.info("Resume event: %s", list(event.keys()))
-
-            state = await compiled.aget_state(config)
-            if state.next and "human_approval" in state.next:
-                logger.info("Another interrupt detected after resume (thread=%s)", thread_id)
-                self._pending_interrupts[thread_id] = {
-                    "compiled": compiled,
-                    "config": config,
-                }
-                await self._send_approval_telegram(thread_id, state)
-                return result
-
-            logger.info("Creation pipeline thread=%s completed after resume", thread_id)
-            return result
-        except Exception as e:
-            raise PipelineError(
-                f"Failed to resume creation pipeline thread={thread_id}: {e}"
-            ) from e
-
-    def _schedule_delayed_publish(self, thread_id: str, decision: dict, publish_at: str) -> None:
-        try:
-            run_date = datetime.fromisoformat(publish_at)
-        except ValueError:
-            logger.error("Invalid publish_at datetime: %s", publish_at)
-            return
-
-        if run_date.tzinfo is None:
-            run_date = run_date.replace(tzinfo=UTC)
-
-        now = datetime.now(UTC)
-        if run_date <= now:
-            logger.warning(
-                "publish_at %s is in the past — scheduling for immediate execution",
-                publish_at,
-            )
-
-        resume_decision = {k: v for k, v in decision.items() if k != "publish_at"}
-
-        async def _delayed_resume():
-            try:
-                await self.resume_creation(thread_id, resume_decision)
-            except PipelineError:
-                logger.exception("Delayed publish failed for thread=%s", thread_id)
-
-        self._scheduler.add_job(
-            _delayed_resume,
-            "date",
-            run_date=run_date,
-            id=f"delayed_publish_{thread_id}",
-            replace_existing=True,
-        )
-        # TODO: APScheduler uses in-memory job store — delayed publishes are lost on restart.
-        # Consider a persistent job store (e.g. Redis/PostgreSQL) for production reliability.
-        logger.info("Scheduled delayed publish for thread=%s at %s", thread_id, publish_at)
 
     async def run_learning_pipeline(self) -> dict | None:
         async with self._cycle_lock:
@@ -369,10 +212,6 @@ class PipelineOrchestrator:
             minimal_state, hn=self._hn_client, scraper=self._scraper, kb=self.kb
         )
         return result.get("viral_posts", [])
-
-    @property
-    def pending_approvals(self) -> dict[str, dict]:
-        return dict(self._pending_interrupts)
 
     @property
     def is_paused(self) -> bool:

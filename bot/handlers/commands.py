@@ -262,10 +262,6 @@ async def handle_force_command(update: Update, context: ContextTypes.DEFAULT_TYP
         await update.message.reply_text(ORCHESTRATOR_NOT_AVAILABLE)
         return
 
-    if orchestrator.pending_approvals:
-        await update.message.reply_text(FORCE_PENDING_APPROVALS)
-        return
-
     active_tasks = sum(1 for t in _background_tasks if not t.done())
     if active_tasks >= MAX_CONCURRENT_BACKGROUND_TASKS:
         await update.message.reply_text(FORCE_TOO_MANY_TASKS.format(active_tasks=active_tasks))

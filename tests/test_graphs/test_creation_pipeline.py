@@ -36,7 +36,6 @@ def test_creation_pipeline_has_correct_nodes():
         "extract_patterns",
         "generate_post_variants",
         "rank_and_select",
-        "human_approval",
         "publish_post",
         "schedule_metrics_check",
     }

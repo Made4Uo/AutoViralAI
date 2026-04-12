@@ -16,7 +16,6 @@ async def get_status(request: Request, _=Depends(verify_api_key)):
             "stats": {},
         }
 
-    pending = orchestrator.pending_approvals
     jobs = orchestrator.get_scheduled_jobs()
 
     return {
@@ -24,8 +23,6 @@ async def get_status(request: Request, _=Depends(verify_api_key)):
         "pipelines": {
             "creation": {
                 "cycles_completed": orchestrator.creation_cycle,
-                "pending_approvals": len(pending),
-                "pending_thread_ids": list(pending.keys()),
             },
             "learning": {
                 "cycles_completed": orchestrator.learning_cycle,

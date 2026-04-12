@@ -5,7 +5,6 @@ from langgraph.graph import END, START, StateGraph
 
 from config.settings import Settings
 from src.models.state import CreationPipelineState
-from src.nodes.approval import human_approval
 from src.nodes.generation import generate_post_variants
 from src.nodes.goal_check import goal_check
 from src.nodes.patterns import extract_patterns
@@ -62,10 +61,6 @@ def build_creation_pipeline(
         partial(rank_and_select, llm=llm, kb=kb, embedding_client=embedding_client),
     )
     graph.add_node(
-        "human_approval",
-        human_approval,
-    )
-    graph.add_node(
         "publish_post",
         partial(publish_post, threads_client=threads_client, kb=kb),
     )
@@ -85,18 +80,7 @@ def build_creation_pipeline(
     graph.add_edge("research_viral_content", "extract_patterns")
     graph.add_edge("extract_patterns", "generate_post_variants")
     graph.add_edge("generate_post_variants", "rank_and_select")
-    graph.add_edge("rank_and_select", "human_approval")
-
-    graph.add_conditional_edges(
-        "human_approval",
-        _after_approval,
-        {
-            "publish": "publish_post",
-            "regenerate": "generate_post_variants",
-            "end": END,
-        },
-    )
-
+    graph.add_edge("rank_and_select", "publish_post")
     graph.add_edge("publish_post", "schedule_metrics_check")
     graph.add_edge("schedule_metrics_check", END)
 
@@ -109,11 +93,3 @@ def _should_continue(state: CreationPipelineState) -> str:
     return "continue"
 
 
-def _after_approval(state: CreationPipelineState) -> str:
-    decision = state.get("human_decision", "reject")
-    if decision in ("approve", "edit"):
-        return "publish"
-    feedback = state.get("human_feedback", "")
-    if decision == "reject" and feedback:
-        return "regenerate"
-    return "end"

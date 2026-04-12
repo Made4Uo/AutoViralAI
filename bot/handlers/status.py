@@ -1,6 +1,4 @@
 import logging
-from html import escape
-
 from telegram import Update
 from telegram.ext import ContextTypes
 
@@ -29,14 +27,6 @@ async def handle_status_command(update: Update, context: ContextTypes.DEFAULT_TY
             f"📋 Cycles: {orchestrator.creation_cycle} creation, "
             f"{orchestrator.learning_cycle} learning"
         )
-
-        pending = orchestrator.pending_approvals
-        if pending:
-            lines.append(f"⏳ Pending approvals: {len(pending)}")
-            for tid in pending:
-                lines.append(f"  • {escape(tid)}")
-        else:
-            lines.append("Pending approvals: 0")
 
         jobs = orchestrator.get_scheduled_jobs()
         next_runs = [
